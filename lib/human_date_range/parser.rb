@@ -19,9 +19,11 @@ module HumanDateRange
         /\s(год|года)\s/                        => '',
         /\s(пнд|втр|срд|чтв|птц|сбт|вск)/       => '',
         /\s(пн|вт|ср|чт|пт|сб|вс)/              => '',
-        /сегодня/                               => -> { Date.today.strftime(@output_format) }.call ,
-        /завтра/                                => -> { Date.tomorrow.strftime(@output_format) }.call ,
-        /с(.+)по(.+)/                           => '\1 - \2',
+        /сегодня/                               => -> { Date.today.strftime("%d-%m-%Y") }.call ,
+        /послезавтра/                           => -> { ( Date.today + 2 ).strftime("%d-%m-%Y") }.call ,
+        /завтра/                                => -> { ( Date.today + 1 ).strftime("%d-%m-%Y") }.call ,
+        /вчера/                                 => -> { ( Date.today - 1 ).strftime("%d-%m-%Y") }.call ,
+        /с(?:о)?(.+)по(.+)/                     => '\1 - \2',
         /\s+/                                   => ' ',
         /[,|-]\s?+\z/                           => '',
         /(года|год|г)/                          => ''
@@ -38,44 +40,48 @@ module HumanDateRange
 
     def parse
       normalize!
-      perform(@string)
+      begin
+        perform(@string)
+      rescue ArgumentError
+        nil
+      end
     end
 
     private
 
     def normalize!
-      @string = @string.mb_chars.strip.downcase.to_s
+      @string = Unicode.downcase(@string).strip
       NORMALIZERS[@language].each{ |k,v| @string.gsub!(k,v) }
       @string.strip
       @string = @string.split(',') if @string =~ /,/
     end
 
     # Здесь основная логика для специфичных случаев
-    def perform
-      if @string.kind_of?(Array)
+    def perform( string )
+      if string.kind_of?(Array)
          dates = []
-         @string.each{ |date| dates << perform(date) }
+         string.each{ |date| dates << perform(date) }
          dates.flatten.compact
       else
         case
-        when @string.match(/\A(\d{1,2}\.\d{1,2})\z/)
+        when string.match(/\A(\d{1,2}\.\d{1,2})\z/)
           # дд.мм
           # 12.03
           Date.parse("#{$1}.2015").strftime(@output_format)
-        when @string.match( /\A(\d{1,2})\s?+-\s?+(\d{1,2}) (#{MONTHES_REGEXP})\s?+(201[456])?\z/ )
+        when string.match( /\A(\d{1,2})\s?+-\s?+(\d{1,2}) (#{MONTHES_REGEXP})\s?+(201[456])?\z/ )
           # дд-дд (мм) гг
           # 12-31 декабря 2015
           starts  = Date.parse("#$1 #$3 #$4")
           ends    = Date.parse("#$2 #$3 #$4")
           parse_range(starts, ends)
-        when @string.match( /(.*) - (.*)/ )
+        when string.match( /(.*) - (.*)/ )
           # Дата - Дата
           # 1 декабря - 13 февраля 2016
           starts  = Date.parse(perform("#$1"))
           ends    = Date.parse(perform("#$2"))
           parse_range(starts, ends)
         else
-          Date.parse(@string).strftime(@output_format)
+          Date.parse(string).strftime(@output_format)
         end
       end
     end
